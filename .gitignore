@@ -1,0 +1,16 @@
+# 二进制太大（120M+，超 GitHub 100MB 上限），不进 git，靠 download-binary.sh 获取
+bin/new-api
+bin/*.tmp
+# 打包产物
+*.zip
+# 运行时数据（万一有人把手机上的目录整个拷回来）
+newapi/
+logs/
+*.log
+# 手机数据备份 —— 含渠道/令牌数据库，绝不能入库
+.backup_phone/
+# 下载脚本自动生成的版本标记
+bin/VERSION
+# 系统文件
+.DS_Store
+Thumbs.db

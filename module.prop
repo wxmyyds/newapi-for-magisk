@@ -1,0 +1,6 @@
+id=newapi_for_magisk
+name=New API for Magisk
+version=v1.2.0
+versionCode=5
+author=local
+description=本地 AI API 中转站(New API)，开机自启，整合多供应商，按渠道关键词筛选模型。访问 http://localhost:3100 ，首次使用需按引导页初始化管理员账号。
