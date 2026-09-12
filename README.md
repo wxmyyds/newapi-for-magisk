@@ -4,6 +4,16 @@
 
 ## 快速使用
 
+### 方式一：直接下载 Release（推荐）
+
+1. 到 [Releases](https://github.com/wxmyyds/newapi-for-magisk/releases/latest) 下载 `newapi-for-magisk.zip`
+2. Magisk App → 模块 → 从存储安装 → 选这个 zip → 重启
+3. 重启后访问 http://localhost:3100，首次进入初始化引导页设置管理员账号
+
+> 包内已内置 arm64 二进制与运行库，无需 Termux、无需下载。
+
+### 方式二：源码自行打包
+
 ```bash
 # 1. 下载二进制（在模块目录内运行，自动尝试多个镜像）
 cd /storage/emulated/0/project/newapi-for-magisk  # 改成你的实际路径
