@@ -109,6 +109,110 @@ else
 fi
 export SSL_CERT_FILE="$CA_DATA"
 
+# ---------- 出站代理（可选，proxy.conf 单 URL 行） ----------
+# 配置文件：$DATA_DIR/proxy.conf，首次启动自动建模板，之后永不覆盖。
+# 空文件/全注释 = 直连（默认，零影响）；填一行代理地址即走代理，仅代理外网。
+# 代理连不上/格式非法 = WARN + 直连（不断服）；恢复后点 ACTION 重启模块生效。
+PROXY_CONF="$DATA_DIR/proxy.conf"
+if [ ! -f "$PROXY_CONF" ]; then
+  cat > "$PROXY_CONF" <<'EOF'
+# New API 出站代理（可选）
+# 直连：保持全注释/空文件即可（默认）
+# 走代理：取消最后一行注释，改成你的代理地址（地址中不要带 #）
+# 格式：http:// / https:// / socks5:// / socks5h://
+# 示例（本机 mihomo 默认 mixed-port 7890）：
+# http://127.0.0.1:7890
+EOF
+  echo "[$(date)] 已生成代理配置模板：$PROXY_CONF（默认直连，需代理请编辑后重启模块）"
+fi
+PROXY_URL=$(sed -e 's/#.*$//' -e 's/[[:space:]]//g' -e '/^$/d' "$PROXY_CONF" 2>/dev/null | head -n1)
+if [ -z "$PROXY_URL" ]; then
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  echo "[$(date)] 直连模式（proxy.conf 未配置代理）"
+else
+  case "$PROXY_URL" in
+    http://*|https://*|socks5://*|socks5h://*) ;;
+    *)
+      echo "[$(date)] WARN: 代理地址格式非法，已忽略并走直连：$PROXY_URL（应为 http(s):// 或 socks5(h):// 开头）"
+      PROXY_URL=""
+      ;;
+  esac
+fi
+if [ -n "$PROXY_URL" ]; then
+  # 连通性检查：只测代理端口通不通，不测外网（开机时外网可能还没就绪）。
+  # 本机代理给 30 秒启动窗口（等 mihomo 之类先起）；远端代理只测一次。
+  _tmp=${PROXY_URL#*://}; _tmp=${_tmp%%/*}; _tmp=${_tmp##*@}
+  PROXY_HOST=""; PROXY_PORT=""
+  case "$_tmp" in
+    \[*)
+      # [v6] 或 [v6]:port：先按 ] 切分，避免裸 v6 冒号干扰
+      PROXY_HOST=${_tmp%%]*}; PROXY_HOST=${PROXY_HOST#\[}
+      _rest=${_tmp#*\]}
+      case "$_rest" in
+        :*) PROXY_PORT=${_rest#:} ;;
+      esac
+      ;;
+    *:*) PROXY_HOST=${_tmp%:*}; PROXY_PORT=${_tmp##*:} ;;
+    *) PROXY_HOST=$_tmp ;;
+  esac
+  case "$PROXY_PORT" in ''|*[!0-9]*) PROXY_PORT="" ;; esac
+  if [ -z "$PROXY_HOST" ]; then
+    echo "[$(date)] WARN: 代理地址无有效主机，已忽略并走直连：$PROXY_URL"
+    PROXY_URL=""
+  fi
+  if [ -z "$PROXY_PORT" ] && [ -n "$PROXY_URL" ]; then
+    case "$PROXY_URL" in https://*) PROXY_PORT=443 ;; socks5://*|socks5h://*) PROXY_PORT=1080 ;; *) PROXY_PORT=80 ;; esac
+  fi
+  _proxy_probe() {
+    _probe_host=$1
+    case "$_probe_host" in *:*) _probe_host="[$_probe_host]" ;; esac
+    if command -v curl >/dev/null 2>&1; then
+      curl -s -o /dev/null --max-time 3 "http://$_probe_host:$2/" >/dev/null 2>&1
+      _c=$?
+      # 7=连不上 28=超时 算不通；其他（400/404/空回包/握手失败等）都算端口活着
+      [ "$_c" -ne 7 ] && [ "$_c" -ne 28 ]
+      return $?
+    fi
+    if command -v nc >/dev/null 2>&1; then
+      nc -z -w 3 "$1" "$2" >/dev/null 2>&1
+      return $?
+    fi
+    return 2
+  }
+  PROXY_STATE="fail"
+  case "$PROXY_HOST" in
+    127.*|localhost|::1)
+      _w=0
+      while [ "$_w" -lt 30 ]; do
+        _proxy_probe "$PROXY_HOST" "$PROXY_PORT"; _rc=$?
+        if [ "$_rc" -eq 0 ]; then PROXY_STATE="ok"; break; fi
+        if [ "$_rc" -eq 2 ]; then PROXY_STATE="unchecked"; break; fi
+        sleep 2; _w=$((_w+2))
+      done
+      ;;
+    *)
+      _proxy_probe "$PROXY_HOST" "$PROXY_PORT"; _rc=$?
+      if [ "$_rc" -eq 0 ]; then PROXY_STATE="ok"; fi
+      if [ "$_rc" -eq 2 ]; then PROXY_STATE="unchecked"; fi
+      ;;
+  esac
+  if [ -z "$PROXY_URL" ]; then
+    : # 主机非法已在上面 WARN，直接直连
+  elif [ "$PROXY_STATE" = "fail" ]; then
+    echo "[$(date)] WARN: 代理连不上，已走直连：$PROXY_URL（检查代理是否运行，恢复后点 ACTION 重启模块）"
+  else
+    export HTTP_PROXY="$PROXY_URL" HTTPS_PROXY="$PROXY_URL" http_proxy="$PROXY_URL" https_proxy="$PROXY_URL"
+    export NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" no_proxy="$NO_PROXY"
+    if [ "$PROXY_STATE" = "unchecked" ]; then
+      echo "[$(date)] 出站走代理（无探测工具，未检查连通性）：$PROXY_URL"
+    else
+      echo "[$(date)] 出站走代理：$PROXY_URL（局域网/本机直连）"
+    fi
+  fi
+  unset _tmp _rest PROXY_HOST PROXY_PORT PROXY_STATE _rc _w _c _probe_host
+  unset -f _proxy_probe 2>/dev/null
+fi
+
 # ---------- New API 运行时配置（环境变量） ----------
 # 错误日志：上游默认关闭（仅环境变量可控，不在后台设置里），
 # 开启后"日志"页的类型筛选才能看到"错误"记录（模型调用失败详情）

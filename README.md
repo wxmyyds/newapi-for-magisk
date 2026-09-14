@@ -82,6 +82,7 @@ su -c "sh /data/adb/modules/newapi_for_magisk/update.sh --force"
 - **开机自启**：late_start service 阶段启动，不阻塞开机
 - **崩溃守护**：进程退出后 8 秒自动重启
 - **DNS 修复**：纯 Go 二进制 resolv.conf 为空时自动写入
+- **出站代理**：proxy.conf 可选配代理，故障自动直连
 - **防重复启动**：PID 文件检查
 - **端口预检**：3100 被占用时快速失败并写明日志，不陷入崩溃循环
 - **资源降级**：renice + ionice 降低优先级，不抢开机资源
@@ -93,6 +94,15 @@ su -c "sh /data/adb/modules/newapi_for_magisk/update.sh --force"
 
 - New API 约 80~150 MB
 - 配合 ZRAM 模块可显著改善（3GB RAM 设备强烈建议）
+
+## 出站代理（可选）
+
+- 配置文件：`/data/adb/newapi/proxy.conf`，首次启动自动生成模板，模块更新不覆盖
+- 默认全注释 = 直连；取消注释填一行代理地址即生效，重启模块后可用：
+  `http://127.0.0.1:7890`
+- 只代理外网，局域网/回环固定直连；New-API 后台渠道页的 Proxy 留空 = 跟随该文件，填了 = 按渠道覆盖
+- 代理连不上/格式非法 = 自动直连（日志有 WARN），不断服；代理恢复后点 ACTION 重启一次
+- 启动时只检查“代理端口通不通”，不测外网；本机代理给 30 秒启动等待（等 mihomo 之类先起）
 
 ## 常见问题
 
