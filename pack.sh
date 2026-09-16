@@ -25,6 +25,36 @@ if [ ! -f "$MODDIR/bin/new-api" ]; then
   exit 1
 fi
 
+# 时区数据库：service.sh 用 TZ/TZDIR 指向它，修复面板时间 UTC 慢 8 小时。
+# 来源：构建机 /usr/share/zoneinfo（Debian/Ubuntu/PC）或 Termux 的 tzdata 包；
+# 已存在且含 Asia/Shanghai 则直接用（可手动替换定制）。不进 git，每次打包自动准备。
+if [ ! -f "$MODDIR/zoneinfo/Asia/Shanghai" ]; then
+  ZSRC=""
+  for _z in /usr/share/zoneinfo \
+            /data/data/com.termux/files/usr/share/zoneinfo \
+            "$PREFIX/share/zoneinfo"; do
+    if [ -f "$_z/Asia/Shanghai" ]; then ZSRC="$_z"; break; fi
+  done
+  if [ -n "$ZSRC" ]; then
+    echo ">> 拷贝时区数据库: $ZSRC -> $MODDIR/zoneinfo"
+    mkdir -p "$MODDIR/zoneinfo"
+    for _e in "$ZSRC"/*; do
+      _b=${_e##*/}
+      # posix/ right/ 是闰秒变体，TZ 解析用不到，排除以减小包体积
+      case "$_b" in posix|right) continue ;; esac
+      cp -r "$_e" "$MODDIR/zoneinfo/" 2>/dev/null
+    done
+  fi
+  unset _z _e _b ZSRC
+fi
+if [ -f "$MODDIR/zoneinfo/Asia/Shanghai" ]; then
+  ZN=$(find "$MODDIR/zoneinfo" -type f | wc -l)
+  echo "- 时区数据库就绪 ($ZN 个文件)"
+else
+  echo "! 警告: 未找到系统 zoneinfo，未打包时区数据（面板时间将显示 UTC）"
+  echo "  Termux: pkg install tzdata 后重试；PC: sudo apt install tzdata"
+fi
+
 # 检查打包工具：优先 zip，缺 zip 时用 python3 兜底（同样保留软链接与可执行权限）
 if ! command -v zip >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
   echo "! 需要 zip 或 python3 之一"

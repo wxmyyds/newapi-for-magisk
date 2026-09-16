@@ -11,6 +11,8 @@ logs/
 .backup_phone/
 # 下载脚本自动生成的版本标记
 bin/VERSION
+# 时区数据库（600+ 文件，不入库；pack.sh 打包时自动从构建机拷贝）
+zoneinfo/
 # 系统文件
 .DS_Store
 Thumbs.db

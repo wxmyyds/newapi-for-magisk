@@ -214,6 +214,32 @@ if [ -n "$PROXY_URL" ]; then
 fi
 
 # ---------- New API 运行时配置（环境变量） ----------
+# 时区：Android 没有 /etc/localtime，时区只存在 persist.sys.timezone 属性里，
+# glibc/Go 找不到时区文件会静默回退到 UTC（面板时间比北京慢 8 小时）。
+# 模块自带 zoneinfo/ 数据库（pack.sh 打包时从构建机拷贝），TZDIR/ZONEINFO 指向它。
+ZONE_SRC="$MODDIR/zoneinfo"
+TZ_ZONE=""
+command -v getprop >/dev/null 2>&1 && \
+  TZ_ZONE=$(getprop persist.sys.timezone 2>/dev/null | tr -d '[:space:]')
+if [ -z "$TZ_ZONE" ]; then
+  TZ_ZONE="Asia/Shanghai"
+  echo "[$(date)] WARN: 未读到系统时区 (persist.sys.timezone)，默认用 $TZ_ZONE"
+fi
+if [ -f "$ZONE_SRC/$TZ_ZONE" ]; then
+  export TZ="$TZ_ZONE"
+  export TZDIR="$ZONE_SRC" ZONEINFO="$ZONE_SRC"
+  echo "[$(date)] 时区: TZ=$TZ（系统 persist.sys.timezone，数据库: $ZONE_SRC）"
+  # best-effort：给其他读 /etc/localtime 的程序也铺一份（只读则跳过，不致命）
+  if [ ! -e /etc/localtime ]; then
+    cp -f "$ZONE_SRC/$TZ_ZONE" /etc/localtime 2>/dev/null || \
+      echo "[$(date)] WARN: /etc/localtime 只读，跳过（TZ/TZDIR 已生效，无影响）"
+  fi
+elif [ -d "$ZONE_SRC" ]; then
+  echo "[$(date)] WARN: 时区 $TZ_ZONE 在模块 zoneinfo 中不存在，保持 UTC（更新模块可修复）"
+else
+  echo "[$(date)] WARN: 模块 zoneinfo 缺失 ($ZONE_SRC)，保持 UTC（重新打包模块可修复）"
+fi
+
 # 错误日志：上游默认关闭（仅环境变量可控，不在后台设置里），
 # 开启后"日志"页的类型筛选才能看到"错误"记录（模型调用失败详情）
 export ERROR_LOG_ENABLED=true

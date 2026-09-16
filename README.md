@@ -76,6 +76,7 @@ su -c "sh /data/adb/modules/newapi_for_magisk/update.sh --force"
 | `download-binary.sh` | 下载 New API arm64 二进制用于打包（自动探测最新版本，成功后写 `bin/VERSION`） |
 | `pack.sh` | 打包成可刷入的 zip |
 | `bin/new-api` | 二进制本体（下载后生成） |
+| `zoneinfo/` | 时区数据库（pack.sh 自动准备，不入库；glibc/SQLite 解析本地时间用） |
 
 ## 功能特性
 
@@ -88,6 +89,7 @@ su -c "sh /data/adb/modules/newapi_for_magisk/update.sh --force"
 - **资源降级**：renice + ionice 降低优先级，不抢开机资源
 - **SQLite**：无需 MySQL，零额外内存
 - **错误日志**：`ERROR_LOG_ENABLED=true`，日志页按"错误"类型筛选可见
+- **时区修复**：从 `persist.sys.timezone` 读取并 `export TZ` + 自带 zoneinfo，面板/日志时间与手机一致（否则 UTC 慢 8 小时）
 - **版本号自动检测**：从二进制 Go buildinfo 提取，修复上游 v0.0.0 显示 bug
 
 ## 内存优化
