@@ -1,0 +1,114 @@
+name: Build & Verify
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New API 版本号（如 v1.0.0-rc.42；留空=自动探测最新）'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # 发布 GitHub Release 需要
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tzdata zip unzip shellcheck binutils
+
+      - name: 脚本语法与逻辑验证
+        run: sh tests/verify.sh
+
+      - name: shellcheck（信息性，不阻断构建）
+        run: |
+          shellcheck -s sh -S warning \
+            service.sh action.sh uninstall.sh update.sh \
+            download-binary.sh pack.sh customize.sh \
+            || echo "::warning::shellcheck 有告警，见上方输出（不影响构建）"
+
+      # 完整构建（下载 120MB 二进制 + 打包）只在 tag / 手动触发时执行；
+      # 普通 push 仅跑上面的验证，避免每次提交都拉 120MB
+      - name: 下载 New API 二进制
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            sh download-binary.sh "${{ inputs.version }}" --force
+          else
+            sh download-binary.sh --force
+          fi
+
+      - name: 校验二进制
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        run: sh tests/check-binary.sh
+
+      - name: tag 触发时同步 module.prop 版本号
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VER="${TAG#v}"
+          case "$VER" in
+            [0-9]*\.[0-9]*\.[0-9]*)
+              MAJOR="${VER%%.*}"; REST="${VER#*.}"
+              MINOR="${REST%%.*}"; PATCH="${REST##*.}"
+              CODE=$(printf '%d%02d%02d' "$MAJOR" "$MINOR" "$PATCH" 2>/dev/null || true)
+              [ -n "$CODE" ] && sed -i "s/^versionCode=.*/versionCode=$CODE/" module.prop
+              ;;
+          esac
+          sed -i "s/^version=.*/version=$TAG/" module.prop
+          echo "== module.prop 已同步 =="
+          grep -E '^(id|name|version|versionCode)=' module.prop
+
+      - name: 打包 Magisk zip
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        run: sh pack.sh
+
+      - name: 整理产物到工作区
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p dist
+          cp -f ../newapi-for-magisk.zip dist/
+
+      - name: 校验 zip 内容
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        env:
+          ZIP_FAIL: ''
+        run: |
+          ZIP="dist/newapi-for-magisk.zip"
+          [ -f "$ZIP" ] || { echo "✗ 未找到 $ZIP"; exit 1; }
+          echo "  大小: $(wc -c < "$ZIP") 字节"
+          for entry in module.prop service.sh action.sh uninstall.sh update.sh customize.sh \
+                       download-binary.sh pack.sh tests/verify.sh \
+                       bin/new-api lib/ld-linux-aarch64.so.1 lib/libc.so.6 \
+                       certs/ca-certificates.crt zoneinfo/Asia/Shanghai; do
+            if unzip -l "$ZIP" | grep -q "$entry"; then
+              echo "  ✓ $entry"
+            else
+              echo "  ✗ 缺失: $entry"; ZIP_FAIL=1
+            fi
+          done
+          [ -z "$ZIP_FAIL" ]
+
+      - name: 上传构建产物
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: newapi-for-magisk-${{ github.ref_name }}
+          path: dist/newapi-for-magisk.zip
+          if-no-files-found: error
+
+      - name: 发布 GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/newapi-for-magisk.zip
+          generate_release_notes: true

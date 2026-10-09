@@ -235,10 +235,24 @@ if [ "$ON_PHONE" -eq 1 ]; then
     PID=$(cat "$PID_FILE" 2>/dev/null)
     if [ -n "$PID" ] && grep -aq "bin/new-api" "/proc/$PID/cmdline" 2>/dev/null; then
       kill "$PID" 2>/dev/null
+      # new-api 收到 SIGTERM 后优雅关闭（默认最长 120s，等在途 SSE 流），
+      # 必须等它真正退出再杀守护/替换二进制，否则旧进程会成孤儿继续占着 3100 端口
+      # （守护在 wait 中被杀后无人接管，新实例端口预检 FATAL，更新后服务直接死掉）
+      echo "  等待 PID=$PID 退出（new-api 优雅关闭，最长 30 秒）..."
+      _t=0
+      while [ "$_t" -lt 30 ]; do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 1
+        _t=$((_t+1))
+      done
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "  new-api 30 秒内未正常退出（可能在等待 SSE 流），强制终止"
+        kill -9 "$PID" 2>/dev/null
+      fi
     fi
   fi
   pkill -f "bin/new-api" 2>/dev/null
-  sleep 1
+  # 此时 new-api 已确认退出，守护的 wait 应已返回并因 .stop 自行退出；下面的 kill 只是兜底
   if [ -f "$GUARD_FILE" ]; then
     GUARD_PID=$(cat "$GUARD_FILE" 2>/dev/null)
     if [ -n "$GUARD_PID" ] && grep -aq "newapi_for_magisk" "/proc/$GUARD_PID/cmdline" 2>/dev/null; then
@@ -272,10 +286,10 @@ if [ "$ON_PHONE" -eq 1 ]; then
   else
     sh "$TARGET/service.sh" >/dev/null 2>&1 &
   fi
-  # 简短确认守护是否拉起成功
+  # 简短确认守护是否拉起成功（给足窗口，避免误报"启动未确认"）
   UP=""
   i=0
-  while [ $i -lt 5 ]; do
+  while [ $i -lt 15 ]; do
     sleep 1
     if [ -f "$PID_FILE" ]; then
       P=$(cat "$PID_FILE" 2>/dev/null)

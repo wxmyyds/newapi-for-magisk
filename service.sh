@@ -40,13 +40,15 @@ if [ -f "$START_LOCK" ]; then
   fi
 fi
 echo $$ > "$START_LOCK"
+# 任何 exit 路径都释放本实例的锁（FATAL / 已在运行 / 正常结束），防止陈旧锁残留
+# 注：后台守护子 shell 不继承本 trap（ash 对子 shell 重置 trap），不影响其运行
+trap 'LOCK_OWN=$(cat "$START_LOCK" 2>/dev/null); [ "$LOCK_OWN" = "$$" ] && rm -f "$START_LOCK"; unset LOCK_OWN' EXIT
 
 # ---------- 停止标记清理 ----------
-# 仅开机自启路径清理（重启即恢复自启）；手动路径由 action.sh 启动前已清理，
-# 且保留启动等待期间收到的停止请求（守护拉起后看到 .stop 会立即退出）
-if command -v getprop >/dev/null 2>&1 && [ "$(getprop sys.boot_completed)" != "1" ]; then
-  rm -f "$STOP_FILE"
-fi
+# 无条件清理：开机自启必须恢复；手动启动（action.sh 或直接 sh service.sh）也要求重新拉起。
+# 启动等待期间（等待 sys.boot_completed 时）收到的停止请求不受影响——
+# 清理发生在这之前，守护拉起后仍会看到 .stop 并立即退出。
+rm -f "$STOP_FILE"
 
 # ---------- 等待系统启动完成（状态轮询，不用固定 sleep）----------
 # 手动启动时 sys.boot_completed 已为 1，直接跳过且不额外等待；
@@ -312,11 +314,20 @@ echo "[$(date)] 工作目录: $(pwd)（数据库: $DATA_DIR/one-api.db）"
 # 用 glibc 的 ld-linux 加载动态链接二进制
 # --library-path 指定库搜索路径，root 环境下不受 seccomp 限制
 (
+  # 连续快速崩溃计数：短命进程（存活 <60s）连续 5 次后拉长重启间隔，防无退避循环
+  CONSEC=0
   while true; do
     # 停止标记：action.sh / uninstall.sh 创建，守护看到后彻底退出
     if [ -f "$STOP_FILE" ]; then
       echo "[$(date)] 收到停止标记，守护退出"
       exit 0
+    fi
+    # service.log 超 20MB 轮转一份（守护每轮重启都写这里，防止崩溃循环无限膨胀）
+    SLOG_SZ=$(wc -c 2>/dev/null < "$LOG_FILE" || echo 0)
+    [ -z "$SLOG_SZ" ] && SLOG_SZ=0
+    if [ "$SLOG_SZ" -gt 20971520 ]; then
+      mv -f "$LOG_FILE" "$LOG_FILE.old" 2>/dev/null
+      exec > "$LOG_FILE" 2>&1
     fi
     # stdout.log 超 20MB 轮转一份（请求日志都会打到 stdout，防止无限膨胀）
     LOGSZ=$(wc -c 2>/dev/null < "$DATA_DIR/stdout.log" || echo 0)
@@ -324,6 +335,7 @@ echo "[$(date)] 工作目录: $(pwd)（数据库: $DATA_DIR/one-api.db）"
     [ "$LOGSZ" -gt 20971520 ] && \
       mv -f "$DATA_DIR/stdout.log" "$DATA_DIR/stdout.log.old" 2>/dev/null
     echo "[$(date)] 拉起 new-api ..."
+    _T0=$(date +%s 2>/dev/null || echo 0)
     "$LD_LINUX" --library-path "$LIB_DIR" \
       "$BIN" \
       --port "$PORT" \
@@ -342,14 +354,26 @@ echo "[$(date)] 工作目录: $(pwd)（数据库: $DATA_DIR/one-api.db）"
       echo "[$(date)] 收到停止标记，守护退出"
       exit 0
     fi
-    echo "[$(date)] new-api 进程退出，8 秒后自动重启 ..."
-    sleep 8
+    # 快速崩溃退避：存活不足 60s 视为一次短命启动，连续 5 次后改用 30s 间隔
+    _DUR=$(( $(date +%s 2>/dev/null || echo 0) - _T0 ))
+    if [ "$_DUR" -lt 60 ]; then
+      CONSEC=$((CONSEC+1))
+      echo "[$(date)] new-api 进程退出（存活 ${_DUR}s），连续第 ${CONSEC} 次短命"
+    else
+      CONSEC=0
+    fi
+    if [ "$CONSEC" -ge 5 ]; then
+      echo "[$(date)] WARN: 连续 ${CONSEC} 次快速崩溃，退避到 30 秒后重启"
+      sleep 30
+    else
+      echo "[$(date)] new-api 进程退出，8 秒后自动重启 ..."
+      sleep 8
+    fi
   done
 ) &
 GUARD_PID=$!
 echo "$GUARD_PID" > "$GUARD_FILE"
-# 守护已接管防重复职责，释放启动互斥锁（仅当锁仍属于本次实例时）
-[ "$(cat "$START_LOCK" 2>/dev/null)" = "$$" ] && rm -f "$START_LOCK"
+# 守护已接管防重复职责；启动互斥锁由 EXIT trap 在脚本结束时释放
 
 # 降级守护进程优先级（renice 作用于守护 PID，而非短命父 shell）
 renice -n 19 -p "$GUARD_PID" 2>/dev/null
