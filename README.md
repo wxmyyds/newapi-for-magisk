@@ -10,15 +10,15 @@
 
 ## 从源码打包
 
-需要 `curl`，以及 `zip` 或 `python3`。在仓库目录运行：
+需要 `curl` 或 `wget`，以及 `zip` 或 `python3`。在仓库目录运行：
 
 ```sh
-sh download-binary.sh          # 下载上游最新版
-# sh download-binary.sh v1.0.0-rc.36  # 下载指定版本
+sh update.sh          # 下载上游最新版并准备打包
+# sh update.sh v1.0.0-rc.36  # 下载指定版本
 sh pack.sh
 ```
 
-生成的 `newapi-for-magisk.zip` 位于仓库的上一级目录。将其刷入并重启即可。下载脚本会校验二进制格式和文件大小；镜像下载不提供签名校验。
+生成的 `newapi-for-magisk.zip` 位于仓库的上一级目录。将其刷入并重启即可。下载时会校验二进制格式和文件大小；镜像下载不提供签名校验。
 
 ## 配置与管理
 

@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  update.sh - 手机上直接更新 New API 二进制（免打包、免重刷模块）
+#  update.sh - 下载 New API 二进制；已安装模块时支持原地更新
 #  流程: 探测上游最新版 -> 下载校验 ELF -> 停服务 -> 原地替换
 #        bin/new-api -> 自动重启守护（数据 /data/adb/newapi 不受影响）
 #
@@ -26,7 +26,6 @@ case "$SCRIPT_DIR" in
 esac
 
 REPO="QuantumNous/new-api"
-INSTALLED="/data/adb/modules/newapi_for_magisk"
 DATA_DIR="/data/adb/newapi"
 PID_FILE="$DATA_DIR/new-api.pid"
 GUARD_FILE="$DATA_DIR/guardian.pid"
@@ -35,19 +34,22 @@ RELEASES_LATEST="https://github.com/${REPO}/releases/latest"
 
 # ---------- 更新目标：已安装的模块目录（原地替换），否则脚本所在目录 ----------
 ON_PHONE=0
-if [ -d "$INSTALLED/bin" ]; then
-  if [ "$(id -u 2>/dev/null)" = "0" ]; then
-    TARGET="$INSTALLED"
-    ON_PHONE=1
-  else
-    echo "! 检测到已安装的模块，更新它需要 root 权限"
-    echo "  在 Termux 里执行: su -c \"sh $SCRIPT_DIR/update.sh\""
-    exit 1
-  fi
-else
-  # 未安装模块：更新脚本所在目录的本地副本（配合 pack.sh 打包工作流）
-  TARGET="$SCRIPT_DIR"
-fi
+case "$SCRIPT_DIR" in
+  /data/adb/modules/*)
+    if [ "$(id -u 2>/dev/null)" = "0" ]; then
+      TARGET="$SCRIPT_DIR"
+      ON_PHONE=1
+    else
+      echo "! 检测到已安装的模块，更新它需要 root 权限"
+      echo "  在 Termux 里执行: su -c \"sh $SCRIPT_DIR/update.sh\""
+      exit 1
+    fi
+    ;;
+  *)
+    # 未安装模块：更新脚本所在目录的本地副本（配合 pack.sh 打包工作流）
+    TARGET="$SCRIPT_DIR"
+    ;;
+esac
 BIN="$TARGET/bin/new-api"
 VERSION_FILE="$TARGET/bin/VERSION"
 
@@ -98,7 +100,7 @@ fetch() {
 }
 
 # ---------- 当前版本 ----------
-# bin/VERSION 优先（update.sh / download-binary.sh 都会写），
+# bin/VERSION 优先（本脚本下载时会写入），
 # 否则从二进制 Go buildinfo 提取（与 service.sh 同一套逻辑）
 cur_version() {
   if [ -s "$VERSION_FILE" ]; then

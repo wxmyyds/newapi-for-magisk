@@ -21,7 +21,7 @@ echo "================================================"
 # 检查二进制
 if [ ! -f "$MODDIR/bin/new-api" ]; then
   echo "! 二进制未下载，先运行:"
-  echo "  sh $MODDIR/download-binary.sh"
+  echo "  sh $MODDIR/update.sh"
   exit 1
 fi
 

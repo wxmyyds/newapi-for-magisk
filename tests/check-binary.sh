@@ -1,12 +1,12 @@
 #!/bin/sh
 # ============================================================
-#  check-binary.sh - 校验 bin/new-api（CI 打包前，需先 download-binary.sh）
+#  check-binary.sh - 校验 bin/new-api（需先运行 update.sh）
 #  用法: sh tests/check-binary.sh
 # ============================================================
 BIN="bin/new-api"
 FAIL=0
 
-[ -f "$BIN" ] || { echo "✗ 缺少 $BIN（先运行 sh download-binary.sh）"; exit 1; }
+[ -f "$BIN" ] || { echo "✗ 缺少 $BIN（先运行 sh update.sh）"; exit 1; }
 
 echo "== 校验 $BIN"
 

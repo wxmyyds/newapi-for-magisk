@@ -249,7 +249,7 @@ export ERROR_LOG_ENABLED=true
 # 版本号：上游 release 构建的 -X ldflags 用了错误路径，注入静默失败，UI 会显示 v0.0.0。
 # 运行时用 VERSION 环境变量覆盖。版本号从二进制 Go buildinfo 自动提取（buildinfo 在 ELF 末尾，
 # tail 只读 8MB 窗口开销毫秒级），永远与实际二进制一致，升级时无需改任何配置。
-# 提取失败则回退读 bin/VERSION（download-binary.sh 下载成功时自动写入）
+# 提取失败则回退读 bin/VERSION（update.sh 下载成功时自动写入）
 NAPI_VER=""
 if [ -f "$BIN" ]; then
   NAPI_VER=$(tail -c 8388608 "$BIN" 2>/dev/null | \

@@ -3,31 +3,16 @@
 #  uninstall.sh - Magisk 移除模块时执行
 #  停止进程（含守护循环），保留数据（不删配置/渠道）
 # ============================================================
+case "$0" in
+  */*) MODDIR=${0%/*} ;;
+  *) MODDIR="/data/adb/modules/newapi_for_magisk" ;;
+esac
+[ ! -f "$MODDIR/stop-common.sh" ] && MODDIR="/data/adb/modules/newapi_for_magisk"
+. "$MODDIR/stop-common.sh"
 DATA_DIR="/data/adb/newapi"
 PID_FILE="$DATA_DIR/new-api.pid"
 GUARD_FILE="$DATA_DIR/guardian.pid"
 STOP_FILE="$DATA_DIR/.stop"
-
-# 等待进程退出：new-api 收到 SIGTERM 后优雅关闭（默认最长 120s，等在途 SSE 流），
-# 必须等它真正退出再杀守护，否则守护在 wait 中被杀、new-api 成孤儿继续占着 3100 端口。
-wait_pid_exit() {
-  _wp=$1
-  _t=0
-  while [ "$_t" -lt 30 ]; do
-    kill -0 "$_wp" 2>/dev/null || return 0
-    sleep 1
-    _t=$((_t+1))
-  done
-  echo "  new-api 30 秒内未正常退出（可能在等待 SSE 流），强制终止"
-  kill -9 "$_wp" 2>/dev/null
-  _t=0
-  while [ "$_t" -lt 5 ]; do
-    kill -0 "$_wp" 2>/dev/null || return 0
-    sleep 1
-    _t=$((_t+1))
-  done
-  return 1
-}
 
 # 立停止标记，防止守护循环复活
 touch "$STOP_FILE" 2>/dev/null

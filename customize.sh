@@ -28,7 +28,6 @@ set_perm "$MODDIR/service.sh"              0 0 0755
 set_perm "$MODDIR/action.sh"               0 0 0755
 set_perm "$MODDIR/update.sh"                0 0 0755
 set_perm "$MODDIR/uninstall.sh"            0 0 0755
-set_perm "$MODDIR/download-binary.sh"      0 0 0755
 set_perm "$MODDIR/pack.sh"                 0 0 0755
 
 # 数据目录
@@ -39,7 +38,7 @@ set_perm /data/adb/newapi 0 0 0755
 if [ ! -f "$MODDIR/bin/new-api" ]; then
   ui_print ""
   ui_print "! 警告: bin/new-api 二进制未找到"
-  ui_print "! 请运行: sh $MODDIR/download-binary.sh"
+  ui_print "! 请运行: sh $MODDIR/update.sh"
 else
   ui_print "- 二进制就绪"
   # 检查 glibc 库

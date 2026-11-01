@@ -1,4 +1,4 @@
-# 二进制太大（120M+，超 GitHub 100MB 上限），不进 git，靠 download-binary.sh 获取
+# 二进制太大（120M+，超 GitHub 100MB 上限），不进 git，靠 update.sh 获取
 bin/new-api
 bin/*.tmp
 # 打包产物

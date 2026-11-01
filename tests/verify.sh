@@ -3,10 +3,13 @@
 #  verify.sh - 模块脚本语法 + 关键逻辑验证
 #  用于 CI（.github/workflows/build.yml）与本地：sh tests/verify.sh
 #
-#  注意：本文件中的 wait_pid_exit / 退避计数 / 启动锁 trap 片段与
-#  action.sh、uninstall.sh、service.sh 中的实现保持一致；
-#  改动对应脚本时须同步本文件（防回归），反之亦然。
+# 退避计数与启动锁 trap 片段与 service.sh 保持一致；
+# 修改对应逻辑时须同步测试（防回归），反之亦然。
 # ============================================================
+
+TEST_DIR=${0%/*}
+case "$TEST_DIR" in "$0") TEST_DIR="." ;; esac
+. "$TEST_DIR/../stop-common.sh"
 
 PASS=0
 FAIL=0
@@ -21,7 +24,7 @@ check() {  # check <rc> <描述>
 }
 
 echo "== 1/3 脚本语法检查 (sh -n)"
-for f in service.sh action.sh uninstall.sh update.sh download-binary.sh pack.sh customize.sh; do
+for f in service.sh action.sh uninstall.sh update.sh pack.sh customize.sh stop-common.sh; do
   if [ -f "$f" ]; then
     sh -n "$f" 2>/dev/null && check 0 "语法: $f" || check 1 "语法: $f"
   else
@@ -30,26 +33,9 @@ for f in service.sh action.sh uninstall.sh update.sh download-binary.sh pack.sh 
 done
 
 echo "== 2/3 停止等待逻辑（wait_pid_exit，与 action.sh / uninstall.sh 同源）"
+# 停止等待逻辑直接测试与模块脚本共用的实现。
 # 背景：new-api 收到 SIGTERM 后优雅关闭（默认最长 120s，等在途 SSE 流），
 # 停止流程必须先确认进程真正退出再杀守护，否则 new-api 成孤儿继续占着 3100 端口。
-wait_pid_exit() {
-  _wp=$1
-  _t=0
-  while [ "$_t" -lt 30 ]; do
-    kill -0 "$_wp" 2>/dev/null || return 0
-    sleep 1
-    _t=$((_t+1))
-  done
-  kill -9 "$_wp" 2>/dev/null
-  _t=0
-  while [ "$_t" -lt 5 ]; do
-    kill -0 "$_wp" 2>/dev/null || return 0
-    sleep 1
-    _t=$((_t+1))
-  done
-  return 1
-}
-
 # 2a: 进程 2 秒后自行退出 → 应立即确认死亡 (rc=0)
 ( sleep 2 ) & _P=$!
 wait_pid_exit "$_P"; _RC=$?
